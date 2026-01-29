@@ -140,14 +140,27 @@ jobs:
             -output-format sarif
             -output /github/workspace/trivy-results.sarif
 
-      - name: Fix SARIF permissions and locations
+      - name: Fix SARIF for GitHub Code Scanning
         if: always()
         run: |
           if [ -f trivy-results.sarif ]; then
             sudo chown $(id -u):$(id -g) trivy-results.sarif
-            # Fix missing/empty locations - GitHub requires at least one location per result
-            jq '(.runs[].results[] | select(.locations == null or .locations == [])) .locations = [{"physicalLocation": {"artifactLocation": {"uri": "composer.json"}, "region": {"startLine": 1}}}]' \
-              trivy-results.sarif > trivy-results-fixed.sarif && mv trivy-results-fixed.sarif trivy-results.sarif || echo "Warning: Could not fix SARIF locations"
+            # Fix SARIF issues that cause GitHub Code Scanning to reject the file:
+            # 1. Add missing 'message' field to results (required by GitHub)
+            # 2. Add missing 'locations' to results
+            jq '
+              .runs[].results = [
+                .runs[].results[] |
+                # Fix missing message - use ruleId or default text
+                if .message == null or .message.text == null or .message.text == "" then
+                  .message = {"text": (.ruleId // "Security vulnerability detected")}
+                else . end |
+                # Fix missing locations
+                if .locations == null or .locations == [] then
+                  .locations = [{"physicalLocation": {"artifactLocation": {"uri": "composer.json"}, "region": {"startLine": 1}}}]
+                else . end
+              ]
+            ' trivy-results.sarif > trivy-results-fixed.sarif && mv trivy-results-fixed.sarif trivy-results.sarif || echo "Warning: Could not fix SARIF"
           fi
 
       - name: Upload SARIF to GitHub Security tab
@@ -195,14 +208,27 @@ jobs:
             -output /github/workspace/trivy-docker-results.sarif
             -verbose
 
-      - name: Fix SARIF permissions and locations
+      - name: Fix SARIF for GitHub Code Scanning
         if: always()
         run: |
           if [ -f trivy-docker-results.sarif ]; then
             sudo chown $(id -u):$(id -g) trivy-docker-results.sarif
-            # Fix missing/empty locations - GitHub requires at least one location per result
-            jq '(.runs[].results[] | select(.locations == null or .locations == [])) .locations = [{"physicalLocation": {"artifactLocation": {"uri": "Dockerfile"}, "region": {"startLine": 1}}}]' \
-              trivy-docker-results.sarif > trivy-docker-results-fixed.sarif && mv trivy-docker-results-fixed.sarif trivy-docker-results.sarif || echo "Warning: Could not fix SARIF locations"
+            # Fix SARIF issues that cause GitHub Code Scanning to reject the file:
+            # 1. Add missing 'message' field to results (required by GitHub)
+            # 2. Add missing 'locations' to results
+            jq '
+              .runs[].results = [
+                .runs[].results[] |
+                # Fix missing message - use ruleId or default text
+                if .message == null or .message.text == null or .message.text == "" then
+                  .message = {"text": (.ruleId // "Security vulnerability detected")}
+                else . end |
+                # Fix missing locations
+                if .locations == null or .locations == [] then
+                  .locations = [{"physicalLocation": {"artifactLocation": {"uri": "Dockerfile"}, "region": {"startLine": 1}}}]
+                else . end
+              ]
+            ' trivy-docker-results.sarif > trivy-docker-results-fixed.sarif && mv trivy-docker-results-fixed.sarif trivy-docker-results.sarif || echo "Warning: Could not fix SARIF"
           fi
 
       - name: Upload SARIF to GitHub Security tab
