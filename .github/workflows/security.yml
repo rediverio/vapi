@@ -1,0 +1,172 @@
+# =============================================================================
+# Security Scanning with Rediver Agent
+# =============================================================================
+# Parallel security scanning for vAPI (Vulnerable PHP API)
+#
+# Jobs run in parallel:
+#   - SAST: Semgrep (PHP code analysis)
+#   - Secrets: Gitleaks (credential detection)
+#   - SCA: Trivy (dependency vulnerabilities)
+#   - Container: Trivy image scan (main branch only)
+# =============================================================================
+
+name: Security
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Run every Monday at 00:00 UTC
+    - cron: "0 0 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  # ============================================
+  # SAST - Semgrep (PHP Code Analysis)
+  # ============================================
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Semgrep
+        uses: docker://rediverio/agent:semgrep
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_URL: ${{ secrets.REDIVER_API_URL }}
+          API_KEY: ${{ secrets.REDIVER_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool semgrep
+            -target .
+            -push
+            -comments
+            -sarif semgrep-results.sarif
+            -verbose
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && hashFiles('semgrep-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
+          category: sast
+
+  # ============================================
+  # Secrets - Gitleaks (Credential Detection)
+  # ============================================
+  secrets:
+    name: Secrets (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: docker://rediverio/agent:gitleaks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_URL: ${{ secrets.REDIVER_API_URL }}
+          API_KEY: ${{ secrets.REDIVER_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool gitleaks
+            -target .
+            -push
+            -comments
+            -sarif gitleaks-results.sarif
+            -verbose
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && hashFiles('gitleaks-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks-results.sarif
+          category: secrets
+
+  # ============================================
+  # SCA - Trivy (Dependency Vulnerabilities)
+  # ============================================
+  sca:
+    name: SCA (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy
+        uses: docker://rediverio/agent:trivy
+        env:
+          API_URL: ${{ secrets.REDIVER_API_URL }}
+          API_KEY: ${{ secrets.REDIVER_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool trivy-fs
+            -target .
+            -push
+            -sarif trivy-results.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: sca
+
+  # ============================================
+  # Docker Image Scan (on main branch)
+  # ============================================
+  docker-scan:
+    name: Container Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: vapi:scan
+
+      - name: Run Trivy image scan
+        uses: docker://rediverio/agent:trivy
+        env:
+          API_URL: ${{ secrets.REDIVER_API_URL }}
+          API_KEY: ${{ secrets.REDIVER_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool trivy-image
+            -target vapi:scan
+            -push
+            -sarif trivy-docker-results.sarif
+            -verbose
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && hashFiles('trivy-docker-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-docker-results.sarif
+          category: container
