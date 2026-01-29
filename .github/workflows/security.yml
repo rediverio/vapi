@@ -57,9 +57,16 @@ jobs:
             -output /github/workspace/semgrep-results.sarif
             -verbose
 
+      - name: Fix SARIF permissions
+        if: always()
+        run: |
+          if [ -f semgrep-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) semgrep-results.sarif
+          fi
+
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep-results.sarif
           category: sast
@@ -94,9 +101,16 @@ jobs:
             -output /github/workspace/gitleaks-results.sarif
             -verbose
 
+      - name: Fix SARIF permissions
+        if: always()
+        run: |
+          if [ -f gitleaks-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) gitleaks-results.sarif
+          fi
+
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gitleaks-results.sarif
           category: secrets
@@ -126,9 +140,16 @@ jobs:
             -output-format sarif
             -output /github/workspace/trivy-results.sarif
 
+      - name: Fix SARIF permissions
+        if: always()
+        run: |
+          if [ -f trivy-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) trivy-results.sarif
+          fi
+
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: sca
@@ -171,9 +192,16 @@ jobs:
             -output /github/workspace/trivy-docker-results.sarif
             -verbose
 
+      - name: Fix SARIF permissions
+        if: always()
+        run: |
+          if [ -f trivy-docker-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) trivy-docker-results.sarif
+          fi
+
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-docker-results.sarif
           category: container
